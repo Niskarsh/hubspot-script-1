@@ -10,7 +10,7 @@ class HubspotContactDealAssociation {
     }
 
     async getRecentContacts(offset = 0) {
-        const timestamp = Date.now() - 24 * 60 * 60 * 1000; // 24 hours ago
+        const timestamp = Date.now() - 72 * 60 * 60 * 1000; // 24 hours ago
 
         try {
             const searchCriteria = {
