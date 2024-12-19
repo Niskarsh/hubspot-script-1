@@ -128,7 +128,7 @@ async function mergeContacts(duplicateGroups) {
     }
 }
 
-async function main() {
+async function mergeDuplicateContacts() {
     try {
         console.log('Fetching all contacts...');
         const contacts = await getAllContacts();
@@ -151,4 +151,5 @@ async function main() {
 }
 
 // Run the script
-main(); 
+// main(); 
+module.exports = mergeDuplicateContacts;
