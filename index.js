@@ -1,4 +1,5 @@
 const hubspot = require('@hubspot/api-client');
+const cron = require('node-cron');
 const mergeDuplicateCompanies = require('./mergeDuplicateCompanies');
 const mergeDuplicateContacts = require('./mergeDuplicateContacts');
 require('dotenv').config();
@@ -203,19 +204,27 @@ class HubspotContactDealAssociation {
     }
 }
 
-if (require.main === module) {
+async function handler() {
     console.log('Starting HubSpot contact-deal-company association process...');
     const hubspotManager = new HubspotContactDealAssociation();
-
-    (async () => {
-        try {
-            await hubspotManager.processContacts();
-            await mergeDuplicateContacts();
-            await mergeDuplicateCompanies();
-        } catch (error) {
-            console.error('Error in the main process:', error);
-        }
-    })();
+    try {
+        await hubspotManager.processContacts();
+        await mergeDuplicateContacts();
+        await mergeDuplicateCompanies();
+    } catch (error) {
+        console.error('Error in the main process:', error);
+    }
 }
 
-module.exports = HubspotContactDealAssociation;
+cron.schedule('15 23 * * *', async () => {
+    console.log('Running scheduled task: Hubspot duplicate merger');
+    handler();
+  });
+  
+  // Graceful shutdown
+  process.on('SIGTERM', async () => {
+    console.info('Shutting down...');
+    process.exit(0);
+  });
+
+// module.exports = HubspotContactDealAssociation;
