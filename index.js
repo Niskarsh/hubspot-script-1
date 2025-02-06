@@ -13,7 +13,7 @@ class HubspotContactDealAssociation {
     }
 
     async getRecentContacts(offset = 0) {
-        const timestamp = Date.now() - 72 * 60 * 60 * 1000; // 24 hours ago
+        const timestamp = Date.now() - 24 * 60 * 60 * 1000; // 24 hours ago
 
         try {
             const searchCriteria = {
@@ -25,12 +25,20 @@ class HubspotContactDealAssociation {
                     }],
                 }],
                 properties: ['lemlistjobpostingurl', 'company', 'createdate'],
-                limit: 2,
+                limit: 100,
                 after: offset,
             };
 
             const searchResponse = await this.hubspotClient.crm.contacts.searchApi.doSearch(searchCriteria);
             console.log(`Found ${searchResponse.total} contacts created in the last 24 hours`);
+            console.log(`Processing batch of ${searchResponse.results.length} contacts starting from offset ${offset}`);
+            
+            // Log unique lemlistjobpostingurls in this batch
+            const uniqueUrls = new Set(searchResponse.results
+                .filter(contact => contact.properties.lemlistjobpostingurl)
+                .map(contact => contact.properties.lemlistjobpostingurl));
+            console.log(`Found ${uniqueUrls.size} unique job posting URLs in this batch`);
+            
             return { results: searchResponse.results, total: searchResponse.total };
         } catch (error) {
             throw new Error(`Error fetching recent contacts: ${error.message}`);
@@ -43,18 +51,51 @@ class HubspotContactDealAssociation {
         }
 
         try {
-            const response = await this.hubspotClient.crm.deals.searchApi.doSearch({
+            // First try exact match with EQUALS operator
+            const exactResponse = await this.hubspotClient.crm.deals.searchApi.doSearch({
                 filterGroups: [{
                     filters: [{
                         propertyName: 'dealname',
-                        operator: 'EQ',
-                        value: lemlistJobPostingUrl.trim(),
-                    }],
+                        operator: 'EQ',  // Using EQ instead of EQUALS
+                        value: lemlistJobPostingUrl.trim()
+                    }]
                 }],
+                properties: ['dealname', 'createdate', 'dealstage'],
+                limit: 100
             });
-            return response.results || [];
+
+            if (exactResponse.total > 0) {
+                console.log(`Found ${exactResponse.total} exact matches for deal: ${lemlistJobPostingUrl}`);
+                return exactResponse.results;
+            }
+
+            // If no exact match found, try contains token search
+            const containsResponse = await this.hubspotClient.crm.deals.searchApi.doSearch({
+                filterGroups: [{
+                    filters: [{
+                        propertyName: 'dealname',
+                        operator: 'CONTAINS_TOKEN',  // Using CONTAINS_TOKEN instead of CONTAINS
+                        value: lemlistJobPostingUrl.trim()
+                    }]
+                }],
+                properties: ['dealname', 'createdate', 'dealstage'],
+                limit: 100
+            });
+
+            // Filter for exact matches (case-insensitive)
+            const matches = containsResponse.results.filter(deal => 
+                deal.properties.dealname.toLowerCase().trim() === lemlistJobPostingUrl.toLowerCase().trim()
+            );
+
+            if (matches.length > 0) {
+                console.log(`Found ${matches.length} case-insensitive matches for deal: ${lemlistJobPostingUrl}`);
+            }
+
+            return matches;
         } catch (error) {
-            throw new Error(`Error searching deal: ${error.message}`);
+            console.error(`Error searching for deal ${lemlistJobPostingUrl}:`, error.message);
+            // Return empty array instead of throwing error to allow process to continue
+            return [];
         }
     }
 
@@ -81,17 +122,37 @@ class HubspotContactDealAssociation {
 
     async createDeal(dealName) {
         try {
+            // First check for existing deals
+            const existingDeals = await this.searchDeal(dealName);
+            
+            if (existingDeals && existingDeals.length > 0) {
+                const existingDeal = existingDeals[0];
+                console.log(`Using existing deal: ${existingDeal.id} for ${dealName}`);
+                return existingDeal.id;
+            }
+
+            // Double-check right before creation to prevent race conditions
+            const doubleCheck = await this.searchDeal(dealName);
+            if (doubleCheck && doubleCheck.length > 0) {
+                const existingDeal = doubleCheck[0];
+                console.log(`Found deal in double-check: ${existingDeal.id} for ${dealName}`);
+                return existingDeal.id;
+            }
+
+            // Create new deal only if no existing deals found
             const dealData = {
                 properties: {
                     dealname: dealName.trim(),
-                    dealstage: '236104964', // Example deal stage, replace with your own
+                    dealstage: '236104964',
                 },
             };
+
             const deal = await this.hubspotClient.crm.deals.basicApi.create(dealData);
-            console.log(`Created new deal: ${deal.id}`);
+            console.log(`Created new deal: ${deal.id} for ${dealName}`);
             return deal.id;
         } catch (error) {
-            throw new Error(`Error creating deal: ${error.message}`);
+            console.error(`Error creating deal ${dealName}:`, error.message);
+            throw error;
         }
     }
 
@@ -149,14 +210,15 @@ class HubspotContactDealAssociation {
     async processContacts() {
         try {
             let { results: contacts, total } = await this.getRecentContacts();
-            console.log(`Found ${contacts.length} contacts to process`, total);
+            console.log(`Found ${contacts.length} contacts to process out of total ${total}`);
             let offset = 0;
             let count = 0;
+            let uniqueUrls = new Set();
+            let processedUrls = new Set();
+
             do {
                 console.log(`Processing contacts from ${offset} to ${offset + contacts.length}`);
-                  for (const contact of contacts) {
-                // for (let i = 0; i < 1; i++) {
-                    // const contact = contacts[i];
+                for (const contact of contacts) {
                     console.log(`Processing contact ${count++}`);
                     const lemlistJobPostingUrl = contact.properties.lemlistjobpostingurl;
                     const companyName = contact.properties.company;
@@ -166,22 +228,27 @@ class HubspotContactDealAssociation {
                         continue;
                     }
 
+                    // Track unique URLs
+                    uniqueUrls.add(lemlistJobPostingUrl);
+
                     console.log(`Processing contact ${contact.id} with lemlistJobPostingUrl: ${lemlistJobPostingUrl}`);
-                    // console.log(contact);
+                    
                     // Check or create deal
                     let dealId;
                     const deals = await this.searchDeal(lemlistJobPostingUrl);
-                    // console.log(deals);
                     if (deals.length > 0) {
                         dealId = deals[0].id;
                         console.log(`Found existing deal: ${dealId}`);
                     } else {
                         dealId = await this.createDeal(lemlistJobPostingUrl);
                     }
-                    console.log(dealId);
-                    // Associate contact with deal
-                    let a = await this.createAssociation('deals', 'contacts', dealId, contact.id);
-                    // // Check or create company
+                    
+                    processedUrls.add(lemlistJobPostingUrl);
+                    console.log(`Processed URLs: ${processedUrls.size} out of ${uniqueUrls.size} unique URLs`);
+
+                    // Rest of the association code...
+                    await this.createAssociation('deals', 'contacts', dealId, contact.id);
+                    
                     let companyId;
                     const companies = await this.searchCompany(companyName);
                     if (companies.length > 0) {
@@ -190,15 +257,18 @@ class HubspotContactDealAssociation {
                     } else {
                         companyId = await this.createCompany(companyName);
                     }
-                    // console.log(companies);
 
-                    // Associate company with deal
                     await this.createAssociation('deals', 'companies', dealId, companyId);
                 }
                 offset += contacts.length;
                 ({ results: contacts } = await this.getRecentContacts(offset));
-            } while (offset < total);
-    } catch (error) {
+            } while (contacts.length > 0 && offset < total);
+
+            console.log('Final Statistics:');
+            console.log(`Total contacts processed: ${count}`);
+            console.log(`Total unique URLs found: ${uniqueUrls.size}`);
+            console.log(`Total URLs processed: ${processedUrls.size}`);
+        } catch (error) {
             console.error('Error processing contacts:', error);
         }
     }
