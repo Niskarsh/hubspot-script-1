@@ -1,5 +1,6 @@
-require('dotenv').config();
-const hubspot = require('@hubspot/api-client');
+import hubspot from '@hubspot/api-client';
+import dotenv from 'dotenv'
+dotenv.config();
 
 const hubspotClient = new hubspot.Client({
     accessToken: process.env.HUBSPOT_ACCESS_TOKEN
@@ -117,7 +118,7 @@ async function mergeDeals(duplicateGroups) {
     }
 }
 
-async function main() {
+async function mergeDuplicateDeals() {
     try {
         console.log('Fetching all deals...');
         const deals = await getAllDeals();
@@ -140,4 +141,4 @@ async function main() {
 }
 
 // Run the script
-main(); 
+export default mergeDuplicateDeals; 

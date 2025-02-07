@@ -1,8 +1,10 @@
-const hubspot = require('@hubspot/api-client');
-const cron = require('node-cron');
-const mergeDuplicateCompanies = require('./mergeDuplicateCompanies');
-const mergeDuplicateContacts = require('./mergeDuplicateContacts');
-require('dotenv').config();
+import hubspot from '@hubspot/api-client';
+import cron from 'node-cron';
+import mergeDuplicateCompanies from './mergeDuplicateCompanies.js';
+import mergeDuplicateContacts from './mergeDuplicateContacts.js';
+import mergeDuplicateDeals from './mergeDuplicateDeals.js';
+import dotenv from 'dotenv';
+dotenv.config();
 
 class HubspotContactDealAssociation {
     constructor() {
@@ -24,7 +26,7 @@ class HubspotContactDealAssociation {
                         value: timestamp.toString(),
                     }],
                 }],
-                properties: ['lemlistjobpostingurl', 'company', 'createdate'],
+                properties: ['lemlistjobpostingurl', 'associatedcompanyid', 'company', 'createdate'],
                 limit: 100,
                 after: offset,
             };
@@ -32,6 +34,8 @@ class HubspotContactDealAssociation {
             const searchResponse = await this.hubspotClient.crm.contacts.searchApi.doSearch(searchCriteria);
             console.log(`Found ${searchResponse.total} contacts created in the last 24 hours`);
             console.log(`Processing batch of ${searchResponse.results.length} contacts starting from offset ${offset}`);
+            // throw new Error('Test error');
+            // return;
             
             // Log unique lemlistjobpostingurls in this batch
             const uniqueUrls = new Set(searchResponse.results
@@ -216,12 +220,31 @@ class HubspotContactDealAssociation {
             let uniqueUrls = new Set();
             let processedUrls = new Set();
 
+            const contactsWithoutCompanyButWithAssociatedCompanyId = contacts.filter(contact => !contact.properties.company && contact.properties.associatedcompanyid);
+            console.log('contactsWithoutCompanyButWithAssociatedCompanyId: ', JSON.stringify(contactsWithoutCompanyButWithAssociatedCompanyId));
+            // throw new Error('Test error');
+
             do {
                 console.log(`Processing contacts from ${offset} to ${offset + contacts.length}`);
+                // throw new Error('Test error');
                 for (const contact of contacts) {
                     console.log(`Processing contact ${count++}`);
                     const lemlistJobPostingUrl = contact.properties.lemlistjobpostingurl;
-                    const companyName = contact.properties.company;
+                    let companyName = contact.properties.company;
+
+                    if (!companyName) {
+                        let responseFromCompanySearch;
+                        try {
+                            responseFromCompanySearch = await this.hubspotClient.crm.companies.basicApi.getById(contact.properties.associatedcompanyid);
+                        } catch (error) {
+                            console.log('error coming from this');
+                        }
+                        // console.log('responseFromCompanySearch: ', JSON.stringify(responseFromCompanySearch, null, 2));
+                        // console.log('company name: ', responseFromCompanySearch?.properties?.name)
+                        companyName = responseFromCompanySearch?.properties?.name;
+                    }
+
+                    // throw new Error('Test error');
 
                     if (!lemlistJobPostingUrl || !companyName) {
                         console.warn(`Skipping contact ${contact.id} due to missing properties.`);
@@ -249,6 +272,9 @@ class HubspotContactDealAssociation {
                     // Rest of the association code...
                     await this.createAssociation('deals', 'contacts', dealId, contact.id);
                     
+                    console.log(`Processing company: ${companyName}`);
+                    console.log('deals: ', JSON.stringify(deals, null, 2));
+                    // throw new Error('Test error');
                     let companyId;
                     const companies = await this.searchCompany(companyName);
                     if (companies.length > 0) {
@@ -281,15 +307,17 @@ async function handler() {
         await hubspotManager.processContacts();
         await mergeDuplicateContacts();
         await mergeDuplicateCompanies();
+        await mergeDuplicateDeals();
     } catch (error) {
         console.error('Error in the main process:', error);
     }
 }
 
-cron.schedule('15 23 * * *', async () => {
-    console.log('Running scheduled task: Hubspot duplicate merger');
-    handler();
-  });
+// cron.schedule('15 23 * * *', async () => {
+//     console.log('Running scheduled task: Hubspot duplicate merger');
+//     handler();
+//   });
+handler();
   
   // Graceful shutdown
   process.on('SIGTERM', async () => {

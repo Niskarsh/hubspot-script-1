@@ -1,5 +1,6 @@
-require('dotenv').config();
-const hubspot = require('@hubspot/api-client');
+import dotenv from 'dotenv';
+dotenv.config();
+import hubspot from '@hubspot/api-client';
 
 const hubspotClient = new hubspot.Client({
     accessToken: process.env.HUBSPOT_ACCESS_TOKEN
@@ -152,4 +153,4 @@ async function mergeDuplicateContacts() {
 
 // Run the script
 // main(); 
-module.exports = mergeDuplicateContacts;
+export default mergeDuplicateContacts;
