@@ -33,17 +33,17 @@ async function getAllCompanies() {
 async function findDuplicates(companies) {
     // Group companies by name
     const groupedByName = companies.reduce((acc, company) => {
-        // Skip companies with no name
-        if (!company.properties?.name) {
+        const name = company.properties?.name?.trim();
+        if (!name) {
             console.log('Found company with no name:', company.id);
             return acc;
         }
         
-        const name = company.properties.name.toLowerCase().trim();
-        if (!acc[name]) {
-            acc[name] = [];
+        const lowerCaseName = name.toLowerCase();
+        if (!acc[lowerCaseName]) {
+            acc[lowerCaseName] = [];
         }
-        acc[name].push(company);
+        acc[lowerCaseName].push(company);
         return acc;
     }, {});
 

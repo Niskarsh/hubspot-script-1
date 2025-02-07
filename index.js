@@ -1,7 +1,4 @@
 const hubspot = require('@hubspot/api-client');
-const cron = require('node-cron');
-const mergeDuplicateCompanies = require('./mergeDuplicateCompanies');
-const mergeDuplicateContacts = require('./mergeDuplicateContacts');
 require('dotenv').config();
 
 class HubspotContactDealAssociation {
@@ -32,13 +29,13 @@ class HubspotContactDealAssociation {
             const searchResponse = await this.hubspotClient.crm.contacts.searchApi.doSearch(searchCriteria);
             console.log(`Found ${searchResponse.total} contacts created in the last 24 hours`);
             console.log(`Processing batch of ${searchResponse.results.length} contacts starting from offset ${offset}`);
-            
+
             // Log unique lemlistjobpostingurls in this batch
             const uniqueUrls = new Set(searchResponse.results
                 .filter(contact => contact.properties.lemlistjobpostingurl)
                 .map(contact => contact.properties.lemlistjobpostingurl));
             console.log(`Found ${uniqueUrls.size} unique job posting URLs in this batch`);
-            
+
             return { results: searchResponse.results, total: searchResponse.total };
         } catch (error) {
             throw new Error(`Error fetching recent contacts: ${error.message}`);
@@ -46,17 +43,12 @@ class HubspotContactDealAssociation {
     }
 
     async searchDeal(lemlistJobPostingUrl) {
-        if (!lemlistJobPostingUrl) {
-            throw new Error('Deal name (lemlistJobPostingUrl) is required for search');
-        }
-
         try {
-            // First try exact match with EQUALS operator
             const exactResponse = await this.hubspotClient.crm.deals.searchApi.doSearch({
                 filterGroups: [{
                     filters: [{
                         propertyName: 'dealname',
-                        operator: 'EQ',  // Using EQ instead of EQUALS
+                        operator: 'EQ',
                         value: lemlistJobPostingUrl.trim()
                     }]
                 }],
@@ -74,7 +66,7 @@ class HubspotContactDealAssociation {
                 filterGroups: [{
                     filters: [{
                         propertyName: 'dealname',
-                        operator: 'CONTAINS_TOKEN',  // Using CONTAINS_TOKEN instead of CONTAINS
+                        operator: 'CONTAINS_TOKEN',
                         value: lemlistJobPostingUrl.trim()
                     }]
                 }],
@@ -94,29 +86,7 @@ class HubspotContactDealAssociation {
             return matches;
         } catch (error) {
             console.error(`Error searching for deal ${lemlistJobPostingUrl}:`, error.message);
-            // Return empty array instead of throwing error to allow process to continue
             return [];
-        }
-    }
-
-    async searchCompany(companyName) {
-        if (!companyName) {
-            throw new Error('Company name is required for search');
-        }
-
-        try {
-            const response = await this.hubspotClient.crm.companies.searchApi.doSearch({
-                filterGroups: [{
-                    filters: [{
-                        propertyName: 'name',
-                        operator: 'EQ',
-                        value: companyName.trim(),
-                    }],
-                }],
-            });
-            return response.results || [];
-        } catch (error) {
-            throw new Error(`Error searching company: ${error.message}`);
         }
     }
 
@@ -124,7 +94,7 @@ class HubspotContactDealAssociation {
         try {
             // First check for existing deals
             const existingDeals = await this.searchDeal(dealName);
-            
+
             if (existingDeals && existingDeals.length > 0) {
                 const existingDeal = existingDeals[0];
                 console.log(`Using existing deal: ${existingDeal.id} for ${dealName}`);
@@ -143,7 +113,7 @@ class HubspotContactDealAssociation {
             const dealData = {
                 properties: {
                     dealname: dealName.trim(),
-                    dealstage: '236104964',
+                    dealstage: '236104964', // Example deal stage, replace with your own
                 },
             };
 
@@ -156,7 +126,36 @@ class HubspotContactDealAssociation {
         }
     }
 
+    async searchCompany(companyName) {
+        if (!companyName) {
+            console.warn('Company name is missing, skipping search.');
+            return [];
+        }
+
+        try {
+            const response = await this.hubspotClient.crm.companies.searchApi.doSearch({
+                filterGroups: [{
+                    filters: [{
+                        propertyName: 'name',
+                        operator: 'EQ',
+                        value: companyName.trim(),
+                    }],
+                }],
+                limit: 1
+            });
+            return response.results || [];
+        } catch (error) {
+            console.error(`Error searching for company ${companyName}:`, error.message);
+            return [];
+        }
+    }
+
     async createCompany(companyName) {
+        if (!companyName) {
+            console.warn('Company name is missing, cannot create company.');
+            return null;
+        }
+
         try {
             const companyData = {
                 properties: {
@@ -167,7 +166,8 @@ class HubspotContactDealAssociation {
             console.log(`Created new company: ${company.id}`);
             return company.id;
         } catch (error) {
-            throw new Error(`Error creating company: ${error.message}`);
+            console.error(`Error creating company ${companyName}:`, error.message);
+            throw error;
         }
     }
 
@@ -223,8 +223,8 @@ class HubspotContactDealAssociation {
                     const lemlistJobPostingUrl = contact.properties.lemlistjobpostingurl;
                     const companyName = contact.properties.company;
 
-                    if (!lemlistJobPostingUrl || !companyName) {
-                        console.warn(`Skipping contact ${contact.id} due to missing properties.`);
+                    if (!lemlistJobPostingUrl) {
+                        console.warn(`Skipping contact ${contact.id} due to missing lemlistjobpostingurl.`);
                         continue;
                     }
 
@@ -232,7 +232,7 @@ class HubspotContactDealAssociation {
                     uniqueUrls.add(lemlistJobPostingUrl);
 
                     console.log(`Processing contact ${contact.id} with lemlistJobPostingUrl: ${lemlistJobPostingUrl}`);
-                    
+
                     // Check or create deal
                     let dealId;
                     const deals = await this.searchDeal(lemlistJobPostingUrl);
@@ -242,23 +242,42 @@ class HubspotContactDealAssociation {
                     } else {
                         dealId = await this.createDeal(lemlistJobPostingUrl);
                     }
-                    
-                    processedUrls.add(lemlistJobPostingUrl);
-                    console.log(`Processed URLs: ${processedUrls.size} out of ${uniqueUrls.size} unique URLs`);
 
-                    // Rest of the association code...
+                    // Associate contact with deal
                     await this.createAssociation('deals', 'contacts', dealId, contact.id);
-                    
+
+                    // Check or create company
                     let companyId;
-                    const companies = await this.searchCompany(companyName);
-                    if (companies.length > 0) {
-                        companyId = companies[0].id;
-                        console.log(`Found existing company: ${companyId}`);
+                    if (companyName) {
+                        const companies = await this.searchCompany(companyName);
+                        if (companies.length > 0) {
+                            companyId = companies[0].id;
+                            console.log(`Found existing company: ${companyId}`);
+                        } else {
+                            companyId = await this.createCompany(companyName);
+                            console.log(`Created new company: ${companyId}`);
+                        }
+
+                        // Ensure only one company is associated with the deal
+                        const existingCompanyAssociations = await this.hubspotClient.crm.deals.associationsApi.getAll(
+                            dealId,
+                            'companies'
+                        );
+
+                        const associatedCompanyIds = new Set(existingCompanyAssociations.results.map(assoc => assoc.id));
+
+                        if (!associatedCompanyIds.has(companyId)) {
+                            await this.createAssociation('deals', 'companies', dealId, companyId);
+                            console.log(`Associated company ${companyId} with deal ${dealId}`);
+                        } else {
+                            console.log(`Company ${companyId} is already associated with deal ${dealId}`);
+                        }
                     } else {
-                        companyId = await this.createCompany(companyName);
+                        console.warn(`Skipping company association for contact ${contact.id} due to missing company name.`);
                     }
 
-                    await this.createAssociation('deals', 'companies', dealId, companyId);
+                    processedUrls.add(lemlistJobPostingUrl);
+                    console.log(`Processed URLs: ${processedUrls.size} out of ${uniqueUrls.size} unique URLs`);
                 }
                 offset += contacts.length;
                 ({ results: contacts } = await this.getRecentContacts(offset));
@@ -274,27 +293,16 @@ class HubspotContactDealAssociation {
     }
 }
 
-async function handler() {
+if (require.main === module) {
     console.log('Starting HubSpot contact-deal-company association process...');
     const hubspotManager = new HubspotContactDealAssociation();
-    try {
-        await hubspotManager.processContacts();
-        await mergeDuplicateContacts();
-        await mergeDuplicateCompanies();
-    } catch (error) {
-        console.error('Error in the main process:', error);
-    }
+    (async () => {
+        try {
+            await hubspotManager.processContacts();
+        } catch (error) {
+            console.error('Error in the main process:', error);
+        }
+    })();
 }
 
-cron.schedule('15 23 * * *', async () => {
-    console.log('Running scheduled task: Hubspot duplicate merger');
-    handler();
-  });
-  
-  // Graceful shutdown
-  process.on('SIGTERM', async () => {
-    console.info('Shutting down...');
-    process.exit(0);
-  });
-
-// module.exports = HubspotContactDealAssociation;
+module.exports = HubspotContactDealAssociation;

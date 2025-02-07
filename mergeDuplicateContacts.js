@@ -48,15 +48,19 @@ async function findDuplicates(contacts) {
         // Skip contacts that were already grouped by email
         if (contact.properties?.email) return acc;
         
-        // Only group by name if both firstname and lastname exist
-        if (contact.properties?.firstname && contact.properties?.lastname) {
-            const fullName = `${contact.properties.firstname.toLowerCase().trim()} ${contact.properties.lastname.toLowerCase().trim()}`;
+        // Group by first name if last name is missing
+        const firstName = contact.properties?.firstname?.trim();
+        const lastName = contact.properties?.lastname?.trim();
+        
+        if (firstName) {
+            const fullName = lastName ? `${firstName.toLowerCase()} ${lastName.toLowerCase()}` : firstName.toLowerCase();
             if (!acc[fullName]) {
                 acc[fullName] = [];
             }
             acc[fullName].push(contact);
         } else {
-            console.log('Found contact with incomplete name data:', contact.id);
+            console.log('Found contact with no first name:', contact.id);
+            console.log('Contact details:', JSON.stringify(contact, null, 2)); // Log the entire contact object
         }
         return acc;
     }, {});
