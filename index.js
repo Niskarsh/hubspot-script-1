@@ -225,6 +225,7 @@ class HubspotContactDealAssociation {
                     const companyName = contact.properties.company;
 
                     if (!lemlistJobPostingUrl || !companyName) {
+                        console.warn(contact)
                         console.warn(`Skipping contact ${contact.id} due to missing properties.`);
                         continue;
                     }
@@ -243,7 +244,7 @@ class HubspotContactDealAssociation {
                     } else {
                         dealId = await this.createDeal(lemlistJobPostingUrl);
                     }
-                    
+                    console.log(`!!!!!!!!!!!!!!!!!!1Deal ID: ${dealId}`);
                     processedUrls.add(lemlistJobPostingUrl);
                     console.log(`Processed URLs: ${processedUrls.size} out of ${uniqueUrls.size} unique URLs`);
 
@@ -288,10 +289,11 @@ async function handler() {
     }
 }
 
-cron.schedule('15 23 * * *', async () => {
-    console.log('Running scheduled task: Hubspot duplicate merger');
-    handler();
-  });
+handler();
+// cron.schedule('15 23 * * *', async () => {
+//     console.log('Running scheduled task: Hubspot duplicate merger');
+//     handler();
+//   });
   
   // Graceful shutdown
   process.on('SIGTERM', async () => {
