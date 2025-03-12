@@ -117,7 +117,7 @@ async function mergeDeals(duplicateGroups) {
     }
 }
 
-async function main() {
+async function mergeDuplicateDeals() {
     try {
         console.log('Fetching all deals...');
         const deals = await getAllDeals();
@@ -140,4 +140,5 @@ async function main() {
 }
 
 // Run the script
-main(); 
+// main(); 
+module.exports = mergeDuplicateDeals;

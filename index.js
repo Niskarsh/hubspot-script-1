@@ -2,6 +2,7 @@ const hubspot = require('@hubspot/api-client');
 const cron = require('node-cron');
 const mergeDuplicateCompanies = require('./mergeDuplicateCompanies');
 const mergeDuplicateContacts = require('./mergeDuplicateContacts');
+const mergeDuplicateDeals = require('./mergeDuplicateDeals');
 require('dotenv').config();
 
 class HubspotContactDealAssociation {
@@ -281,6 +282,7 @@ async function handler() {
         await hubspotManager.processContacts();
         await mergeDuplicateContacts();
         await mergeDuplicateCompanies();
+        await mergeDuplicateDeals();
     } catch (error) {
         console.error('Error in the main process:', error);
     }
