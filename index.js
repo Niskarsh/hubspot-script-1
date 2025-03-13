@@ -319,12 +319,12 @@ async function handler() {
     console.log('Time taken: ', (endingTime - startingTime) / 1000, ' seconds');
 }
 
-handler();
-// Entering time in  utc: 7am utc is 12:30pm ist
-// cron.schedule('00 07 * * *', async () => {
-//     console.log('Running scheduled task: Hubspot duplicate merger');
-//     handler();
-// });
+// handler();
+// Entering time in UTC: 7:30am UTC is 1:00pm IST
+cron.schedule('30 07 * * *', async () => {
+    console.log('Running scheduled task: Hubspot duplicate merger');
+    handler();
+});
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
