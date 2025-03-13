@@ -301,7 +301,8 @@ class HubspotContactDealAssociation {
 }
 
 async function handler() {
-    console.log('Started at: ', new Date())
+    let startingTime = new Date();
+    console.log('Started at: ', startingTime)
     console.log('Starting HubSpot contact-deal-company association process...');
     const hubspotManager = new HubspotContactDealAssociation();
     try {
@@ -312,7 +313,10 @@ async function handler() {
     } catch (error) {
         console.error('Error in the main process:', error);
     }
-    console.log('Completed at: ', new Date())
+    let endingTime = new Date();
+    console.log('Started at: ', startingTime);
+    console.log('Completed at: ', endingTime);
+    console.log('Time taken: ', (endingTime - startingTime) / 1000, ' seconds');
 }
 
 handler();
